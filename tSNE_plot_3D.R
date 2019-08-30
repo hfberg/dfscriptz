@@ -12,10 +12,11 @@
 # @Dragonmasterx87 (Dept. of Cell Biology, UM)
 # @msaadsadiq (Dept. of Electrical and Computer Engineering, UM)
 # @andrewwbutler (Center for Genomics and Systems Biology, NYU)  
+# Edited 2019-08-30 by Hanna F. Berg to suit df samples.
 
-# Load plot_ly
 library(plotly)
 library(Seurat)
+library(dplyr)
 
 # Construct a dataframe using data from your pre-clustered Seurat v3.0.0 object
 # Here 'seurat_clusters' is list of numeric cluster identities, you can find it here: seurat[["seurat_cluster"]], 
