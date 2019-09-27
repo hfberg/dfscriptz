@@ -7,15 +7,15 @@ library(Seurat)
 library(cowplot)
 library(dplyr)
 library(ggplot2)
-devtools::load_all("~/dftoolz")
+devtools::load_all("~/Tools/dftoolz")
 
 ####################################### Load samples ##############################################
 
-ctrl_samp.name="RA3"
-stim_samp.name = "RS3"
+ctrl_samp.name="Lgao_PBS"
+stim_samp.name = "Lgao_100"
 
-ctrl.data<-DGE_load(samp.name = ctrl_samp.name)
-stim.data<-DGE_load(samp.name = stim_samp.name)
+ctrl.data<-DGE_load(samp.name = "Lgao_PBS_dge.txt.gz")
+stim.data<-DGE_load(samp.name = "Lgao_100_dge.txt.gz")
 
 ################# Set up control object
 ctrl <- CreateSeuratObject(counts = ctrl.data, project = "ctrl")
@@ -25,7 +25,7 @@ ctrl$stim <- "ctrl"
 ctrl[["percent.mt"]] <- PercentageFeatureSet(object = ctrl, pattern = "^mt-")
 VlnPlot(object = ctrl, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
 
-ctrl <- subset(x = ctrl, subset = nFeature_RNA > 700 & nFeature_RNA < 1200 & nCount_RNA>700 & nCount_RNA< 2000 & percent.mt < 3.2)
+ctrl <- subset(x = ctrl, subset = nFeature_RNA > 500 & nFeature_RNA < 1500 & nCount_RNA>500 & nCount_RNA< 1000 & percent.mt < 2.2)
 VlnPlot(object = ctrl, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
 
 #Check that ctrl object is scaled and normalized and filtered. If not, do this.
@@ -44,7 +44,7 @@ stim$stim <- "stim"
 stim[["percent.mt"]] <- PercentageFeatureSet(object = stim, pattern = "^mt-")
 VlnPlot(object = stim, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
 
-stim <- subset(x = stim, subset = nFeature_RNA > 500 & nFeature_RNA <900 & nCount_RNA>500 & nCount_RNA< 1800 & percent.mt < 3.5 )
+stim <- subset(x = stim, subset = nFeature_RNA > 500 & nFeature_RNA <600 & nCount_RNA>500 & nCount_RNA< 1000 & percent.mt < 3.7 )
 VlnPlot(object = stim, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
 
 #Check if stim object is scaled and normalized adn filtered. If not, do this.
@@ -53,30 +53,17 @@ stim <- NormalizeData(object = stim, normalization.method = "LogNormalize", scal
 #Find variable features
 stim <- FindVariableFeatures(object = stim, selection.method = "vst", nfeatures = 2000)
 
-
-
-
 ######################################## Integrate samples #######################################
 
 #Find gene markers to base the integration on
 seurat.anchors <- FindIntegrationAnchors(object.list = c(ctrl,stim), dims = 1:30)
 seurat.combined <- IntegrateData(anchorset = seurat.anchors, dims = 1:30)
 
-###########
-########### Start here for one sample instead of two 
-###########
-###########
-
 # Add metadata information on which samples are ctrl and stim or successful and unsuccessful.
 
 inf<-ctrl@meta.data[["stim"]]
 inf<- append(inf, stim@meta.data[["stim"]])
 seurat.combined$stim<-inf
-
-# Or do it like this
-
-seurat.combined$stim <-read.table("path/to/meta-data/file.txt", head =T, row.names = 1)[,1]
-
 
 ############################### Analysis of the integrated sample ##############################
 
@@ -95,49 +82,18 @@ seurat.combined<-ScaleData(seurat.combined)
 seurat.combined <- RunPCA(object = seurat.combined, npcs = 30, verbose = FALSE)
 ElbowPlot(object = seurat.combined)
 
-PCA_dimensions<-1:5
+PCA_dimensions<-1:8
 # t-SNE and Clustering, dims and resolution can be changed
 seurat.combined <- RunTSNE(object = seurat.combined, reduction = "pca", dims = PCA_dimensions)
-seurat.combined <- FindNeighbors(object = seurat.combined, reduction = "pca", dims = PCA_dimensions)
+seurat.combined <- FindNeighbors(object = seurat.combined, reduction = "pca", dims = PCA_dimensions, k.param = 20)
 seurat.combined <- FindClusters(seurat.combined, resolution = 0.5)
 
 # visualize clusters. Select which meta data you want to visualize in "group.by" or "split.by".
-DimPlot(object = seurat.combined, reduction = "tsne", group.by = "samp.name")
+# DimPlot(object = seurat.combined, reduction = "tsne", group.by = "samp.name")
 DimPlot(object = seurat.combined, reduction = "tsne", group.by = "stim")
 DimPlot(object = seurat.combined, reduction = "tsne", label = TRUE)
 
 DimPlot(object = seurat.combined, reduction = "tsne", split.by = "stim")
-
-
-################################ Without batch effect removal ###################################
-
-#Test what the samples would look like without the batch effect removal. This creates a new seurat object and does not overwrite all work that has been done.
-# also, this is not necessary for the final seurat object, but can be a good comparison to see what the samples would look like with batch effects.
-
-assay.RNA<-GetAssay(object=seurat.combined, assay="RNA")
-DGE.wbatch<-as.matrix(GetAssayData(object=assay.RNA, slot = "data"))
-seurat.combined.wbatch<-CreateSeuratObject(counts=DGE.wbatch, project="with batch effects")
-seurat.combined.wbatch$stim<-seurat.combined@meta.data[["stim"]]
-
-seurat.combined.wbatch <- FindVariableFeatures(object = seurat.combined.wbatch, selection.method = "vst")
-seurat.combined.wbatch<-ScaleData(seurat.combined.wbatch)
-
-#make sure these parameters are the same as in the object with the reduced batch effects, otherwise they will not be comparable.
-seurat.combined.wbatch <- RunPCA(object = seurat.combined.wbatch, npcs = 30, verbose = FALSE)
-# t-SNE and Clustering
-seurat.combined.wbatch <- RunTSNE(object = seurat.combined.wbatch, reduction = "pca", dims = 1:30)
-seurat.combined.wbatch <- FindNeighbors(object = seurat.combined.wbatch, reduction = "pca", dims = 1:30)
-seurat.combined.wbatch <- FindClusters(seurat.combined.wbatch, resolution = 1)
-
-# visualize clusters
-DimPlot(object = seurat.combined.wbatch, reduction = "tsne", group.by = "samp.name")
-DimPlot(object = seurat.combined.wbatch, reduction = "tsne", group.by = "stim")
-DimPlot(object = seurat.combined.wbatch, reduction = "tsne", label = TRUE)
-
-
-DimPlot(object = seurat.combined.wbatch, reduction = "tsne", split.by = "stim")
-
-# You are now done with the comparison of the samples with batch effects. The rest of the script analyses the integrated, batch effect removed seurat object.
 
 ##################################### Differential expression ctrl vs stim #################################
 
@@ -150,10 +106,10 @@ seurat.combined.markers<-read.table("/location/for/Gene markers samples.txt", he
 DefaultAssay(object = seurat.combined) <- "RNA"
 
 # Choose what differential genes you want to compute. Between clusters, between successful vs unsuccessful, between samples and so on.
-Idents(object = seurat.combined)<- as.factor(seurat.combined@meta.data[["seurat_clusters"]]) 
+Idents(object = seurat.combined)<- seurat.combined$seurat_clusters 
 
 # DO ONLY ONCE: scale ALL RNA data to make sure to include all genes when searching for DE genes. 
-seurat.combined <- ScaleData(seurat.combined,features = rownames(GetAssay(seurat.combined, slot = "RNA")))
+seurat.combined <- ScaleData(seurat.combined,features = rownames(GetAssay(seurat.combined, slot = "data")))
 
 
 # Find all markers calculates the differential expression. This takes a long time for big data sets, make sure you save the DE genes after this.
@@ -166,60 +122,37 @@ write.table(seurat.combined.markers, file="Gene markers samples.txt", sep ="\t")
 ############################## Visualize the differentially expressed genes ####################################
 
 #Select how many genes that will be plotted. 
-top10 <- seurat.combined.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC)
-# or:
-top50 <- seurat.combined.markers %>% group_by(cluster) %>% top_n(n = 50, wt = avg_logFC)
+top_n_genes <- seurat.combined.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC)
 
 ############## Heatmap
 
 #the heatmap can not plot more than about 18000 cells in one go. Create subsets if the seurat.combined object contains more cells than 18000
 
-seurat_small<-subset(x=seurat.combined, downsample=8000 )
-
-pdf("Heatmap.pdf")
-DoHeatmap(seurat_small, features=as.character(top50$gene), size = 2) + theme(axis.text.y = element_text(size = 1))
-dev.off()
+#seurat_small<-subset(x=seurat.combined, downsample=8000 )
+#DoHeatmap(seurat_small, features=as.character(top_n_genes$gene), size = 2) + theme(axis.text.y = element_text(size = 1))
 
 # if seurat.combined dontains less than 18000 cells, plot all cells.
-DoHeatmap(seurat.combined, features = as.character(top50$gene),draw.lines = F, slot = "scale.data", size = 3) + theme(axis.text.y = element_text(size = 3))+ggtitle(paste("Heatmap", ctrl_samp.name, "vs", stim_samp.name))
+DoHeatmap(seurat.combined, features = as.character(top_n_genes$gene),draw.lines = F, slot = "scale.data", size = 3) + theme(axis.text.y = element_text(size = 4))+ggtitle(paste("Heatmap", ctrl_samp.name, "vs", stim_samp.name))
 
 ############### Create new meta.data
-# To compare for example all successful and all unsuccessful within one cluster, this data has to be created. 
-# The function below assigns a name such as "cluster 1, successful" "and cluster 1 unsuccessful" for each cell. Then re-run findAllMarkers and heatmap to visualize.
+# To compare for example all ctrl and stim within only one cluster, this data has to be created. 
+# The function below assigns a name such as "cluster 1, successful" "and cluster 1 unsuccessful" for each cell. 
 
-samp.clus.ident=c()
+# Make sure the names given to ident1 and ident2 holds the information you want in the seurat object. Otherwise, add this information first.
 
-for (i in 1:length(seurat.combined@active.ident)){
-  nw<-paste0(seurat.combined@meta.data[["seurat_clusters"]][i]," ",seurat.combined@meta.data[["stim"]][i])
-  samp.clus.ident<-append(samp.clus.ident, nw, after = i)
-}
+CreateCombinedIdentity(seurat = seurat.combined, ident1="active.ident", ident2="stim")
 
-# set the new meta data to the identity to be evaluated.
-Idents(object = seurat.combined)<- as.factor(samp.clus.ident)
+# A vector named new.idents is produced and added to the "active.ident" in the seurat object.
+Idents(seurat.combined) <- new.ident
+
+# Add it to meta data too so you don't accidentally loose it
+ seurat.combined$cluster.stim <- new.ident
 
 ############### Heatmap of individual clusters
-#Plot a heatmap of only cluster x to compare successful and unsuccessful.
+# remember to do this in an safe working directory, the following function will overwrite files 
+# with the same names as the files produced.
 
-# Create an empty vector only once.
-top_DE_ctrl_stim<-data.frame()
-
-# subset the clusters to compare
-seurat_subset<-subset(x = seurat.combined, idents = c("1 ctrl", "1 stim"))
-
-# Find differentially expressed genes.
-markers_subset <- FindAllMarkers(seurat_subset, only.pos = TRUE, min.pct = 0.25)
-
-# Plot heatmap
-pdf("Heatmap 1", height = 8.50, width = 11)
-DoHeatmap(seurat_subset, features = markers_subset$gene, slot = "scale.data", size = 3) + NoLegend() + theme(axis.text.y = element_text(size = 3))
-dev.off()
-
-# extract the most differentiated genes between successful and unsuccessful in this cluster.
-top1_sub <- markers_subset %>% group_by(cluster) %>% top_n(n = 1, wt = avg_logFC)
-
-# save those genes in a data frame.
-top_DE_ctrl_stim<- rbind(top_DE_ctrl_stim, as.data.frame(top1_sub))
-
+HeatmapIndividualClusters(seurat = seurat.combined, top_n_genes = 2, text_size = 1)
 
 ############################################### Dot plot #############################################
 # Dot plot is a quick and useful tool to compare some specific genes between samples, clusters or whatever is in the active identity.
